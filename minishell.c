@@ -114,34 +114,58 @@ int	builtin_echo(t_data *data)
 	return (0);
 }
 
-int	builtin_cd(t_data *data)
+int builtin_cd(t_data *data)
 {
-	char	*path;
-	char	cwd[MAX_PATH];
+    char    *path;
+    char    cwd[MAX_PATH];
 
-	path = data->cmd[1];
-	if (!path)
-	{
-		path = getenv("HOME");
-		if (!path)
-		{
-			write(2, "cd: HOME not set\n", 17);
-			return (1);
-		}
-	}
-	if (chdir(path) != 0)
-	{
-		perror("cd");
-		return (1);
-	}
-	if (getcwd(cwd, sizeof(cwd)) != NULL)
-		setenv("PWD", cwd, 1);
-	else
-	{
-		perror("getcwd");
-		return (1);
-	}
-	return (0);
+    path = data->cmd[1];
+    if (!path)
+    {
+        path = getenv("HOME");
+        if (!path)
+        {
+            write(2, "cd: HOME not set\n", 17);
+            return (1);
+        }
+    }
+    if (chdir(path) != 0)
+    {
+        perror("cd");
+        return (1);
+    }
+    if (getcwd(cwd, sizeof(cwd)) != NULL)
+    {
+        char *new_pwd = malloc(strlen("PWD=") + strlen(cwd) + 1);
+        if (!new_pwd)
+        {
+            perror("malloc");
+            return 1;
+        }
+        strcpy(new_pwd, "PWD=");
+        strcat(new_pwd, cwd);
+        int i = 0;
+        while (environ[i])
+        {
+            if (strncmp(environ[i], "PWD=", 4) == 0)
+            {
+                environ[i] = new_pwd;
+                break;
+            }
+            i++;
+        }
+        if (environ[i] == NULL)
+        {
+            environ[i] = new_pwd;
+            environ[i + 1] = NULL;
+        }
+    }
+    else
+    {
+        perror("getcwd");
+        return (1);
+    }
+    return (0);
 }
 
 int	builtin_pwd(void)
@@ -169,12 +193,13 @@ int	builtin_export(t_data *data)
 	if (!data->cmd[1])
 	{
 		env = environ;
-		while (*env)
+		i =0;
+		while (env[i])
 		{
 			write(1, "declare -x ", 11);
 			write(1, *env, strlen(*env));
 			write(1, "\n", 1);
-			env++;
+			i++;
 		}
 		return (0);
 	}
@@ -217,17 +242,14 @@ int	builtin_env(void)
 
 int builtin_exit(t_data *data)
 {
-    int exit_code;
-
-    exit_code = 0;
+    int exit_code = 0;
     if (data->cmd[1])
     {
         exit_code = atoi(data->cmd[1]);
     }
     printf("exit\n");
     return -1;  
-    printf("exit%d\n",exit_code);
- }
+}
 
 
 
@@ -340,7 +362,7 @@ int	execute_command(t_data *data)
 			exit(127);
 		}
 		execve(cmd_path, data->cmd, environ);
-		perror("shell");
+		perror("bash");
 		free(cmd_path);
 		exit(1);
 	}
@@ -348,8 +370,8 @@ int	execute_command(t_data *data)
 	{
 		waitpid(pid, &status, 0);
 		return ((status & 0xff00) >> 8);
-	}
 }
+	}
 
 int	execute_pipeline(t_data *data)
 {
@@ -417,68 +439,56 @@ int	execute_pipeline(t_data *data)
 	return ((status & 0xff00) >> 8);
 }
 
-char	*expand_variables(char *arg)
+char *expand_variables(char *arg)
 {
-	char	*result;
-	char	*dst;
-	char	*src;
-	char	*value;
-	char	var_name[256];
-	int		i;
+    char *result = malloc(strlen(arg) * 2 + 1); 
+    char *dst = result;
+    char *src = arg;
+    int in_quotes = 0;
 
-	result = malloc(strlen(arg) * 2);
-	dst = result;
-	src = arg;
-	while (*src)
-	{
-		if (*src == '$')
-		{
-			src++;
-			if (*src == '?')
-			{
-				dst += sprintf(dst, "%d", exit_number);
-				src++;
-			}
-			else if (*src == '{')
-			{
-				char *end = strchr(src, '}');
-				if (end)
-				{
-					strncpy(var_name, src + 1, end - src - 1);
-					var_name[end - src - 1] = '\0';
-					value = getenv(var_name);
-					if (value)
-						dst += sprintf(dst, "%s", value);
-					src = end + 1;
-				}
-				else
-				{
-					*dst++ = '$';
-					*dst++ = '{';
-					src++;
-				}
-			}
-			else
-			{
-				i = 0;
-				while (src[i] && (isalnum(src[i]) || src[i] == '_'))
-				{
-					var_name[i] = src[i];
-					i++;
-				}
-				var_name[i] = '\0';
-				value = getenv(var_name);
-				if (value)
-					dst += sprintf(dst, "%s", value);
-				src += i;
-			}
-		}
-		else
-			*dst++ = *src++;
-	}
-	*dst = '\0';
-	return (result);
+while (*src)
+{
+    if (*src == '"')
+    {
+        in_quotes = !in_quotes;
+        src++;
+    }
+    else if (*src == '$' && (!in_quotes || isalnum(src[1]) || src[1] == '_' || src[1] == '?'))
+    {
+        src++;
+        if (*src == '?')
+        {
+            dst += sprintf(dst, "%d", exit_number);
+            src++;
+        }
+        else
+        {
+            char var_name[256];
+            int i = 0;
+            while (src[i] && (isalnum(src[i]) || src[i] == '_'))
+            {
+                var_name[i] = src[i];
+                i++;
+            }
+            var_name[i] = '\0';
+            char *value = getenv(var_name);
+            if (value)
+            {
+                dst += sprintf(dst, "%s", value);
+            }
+            src += i;
+        }
+    }
+    else
+    {
+        *dst++ = *src++;
+    }
 }
+*dst = '\0';
+return result;
+}
+
+
 
 t_data	*parse_input(char *input)
 {
@@ -581,9 +591,9 @@ int main()
 
     setup_signals();
 
-    while (should_exit )
+    while (!should_exit)
     {
-        input = readline("minishell> ");
+        input = readline("\033[1;33mminishell> \033[0m");
         if (!input)
         {
             printf("exit\n");

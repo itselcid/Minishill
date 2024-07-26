@@ -1,15 +1,16 @@
-#include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <linux/limits.h>
 
 int main() {
-   // Name of the environment variable (e.g., PATH)
-   const char *name = "PATdcfH";
-   // Get the value associated with the variable
-   const char *env_p = getenv(name);
-   if(env_p){
-      printf("Your %s is %s\n", name, env_p);
-   }
-   else
-    printf("doesnt exist \n");
-   return 0;
+    char cwd[PATH_MAX];
+
+    if (getcwd(cwd, sizeof(cwd)) != NULL) {
+        printf("Current working directory: %s\n", cwd);
+    } else {
+        perror("getcwd");
+        return 1;
+    }
+
+    return 0;
 }
