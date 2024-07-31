@@ -1,15 +1,15 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <readline/readline.h>
-#include <readline/history.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <readline/history.h>
+#include <readline/readline.h>
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #define MAX_ARGS 100
 #define MAX_PATH 1024
@@ -22,18 +22,18 @@ typedef struct s_file
 	int				herdoc;
 	int				apend;
 	struct s_file	*next;
-}	t_file;
+}					t_file;
 
 typedef struct s_data
 {
 	char			**cmd;
 	t_file			*file;
 	struct s_data	*next;
-}	t_data;
+}					t_data;
 
-extern char	**environ;
+extern char			**environ;
 
-int	exit_number = 0;
+int					exit_number = 0;
 
 void	handle_sigint(int sig)
 {
@@ -50,7 +50,6 @@ void	setup_signals(void)
 	signal(SIGQUIT, SIG_IGN);
 }
 
-
 void	add_redirection(t_data *data, char *file, int type)
 {
 	t_file	*new_file;
@@ -63,7 +62,6 @@ void	add_redirection(t_data *data, char *file, int type)
 	new_file->apend = (type == 2);
 	new_file->herdoc = 0;
 	new_file->next = NULL;
-
 	if (!data->file)
 		data->file = new_file;
 	else
@@ -74,98 +72,217 @@ void	add_redirection(t_data *data, char *file, int type)
 		temp->next = new_file;
 	}
 }
+int	ft_setenv(char *key, char *value, int overwrite)
+{
+    int		i;
+    int		key_len;
+    int		value_len;
+    char	*new_var;
+
+    i = 0;
+    key_len = strlen(key);
+    value_len = strlen(value);
+    while (environ[i])
+    {
+        if (strncmp(environ[i], key, key_len) == 0)
+        {
+            if (overwrite)
+            {
+                new_var = malloc(key_len + value_len + 2);
+                strcpy(new_var, key);
+                strcat(new_var, "=");
+                strcat(new_var, value);
+                free(environ[i]);
+                environ[i] = new_var;
+            }
+            return (0);
+        }
+        i++;
+    }
+	if(value=="+" || value==NULL)
+	{
+		new_var = malloc(key_len + 1);
+		strcpy(new_var, key);
+	}
+	else
+	{
+		new_var = malloc(key_len + value_len + 2);
+		strcpy(new_var, key);
+		strcat(new_var, "=");
+		strcat(new_var, value);
+	}
+
+    environ[i] = new_var;
+    environ[i + 1] = NULL;
+    return (0);
+}
+int is_valid_identifier(const char *name) 
+{
+
+	int i = 1;
+    if (!isalpha(name[0]) && name[0] != '_')
+        return 0;
+    while(name[i]) 
+	{
+        if (!isalnum(name[i]) && name[i] != '_')
+            return 0;
+		i++;
+    }
+    return 1;
+}
+int	builtin_export(t_data *data)
+{
+      int		i;
+    int		env_count;
+    char	*name;
+    char	*value;
+    char    *key;
+    char    *val;
+
+    env_count = 0;
+    if (!data->cmd[1])
+    {
+        i = 0;
+        while (environ[i])
+        {
+            key = strdup(environ[i]);
+            val = strchr(key, '=');
+            if (val)
+            {
+                *val = '\0';
+                val++;
+                printf("declare -x %s=\"%s\"\n", key, val);
+            }
+            else
+            {
+                printf("declare -x %s\n", key);
+            }
+            free(key);
+            i++;
+        }
+        return (0);
+    }
+    i = 1;
+    while (data->cmd[i])
+    {
+        name = strdup(data->cmd[i]);
+        value = strchr(name, '=');
+        if (value)
+        {
+            *value = '\0';
+            value++;
+        }
+        if (!is_valid_identifier(name))
+        {
+            printf("bash: export: `%s': not a valid identifier\n", data->cmd[i]);
+            free(name);
+            return (1);
+        }
+        if (value)
+        {
+            ft_setenv(name, value, 1);
+        }
+        else
+        {
+            ft_setenv(name, "+", 0);
+        }
+        free(name);
+        i++;
+    }
+    return (0);
+}
+int	builtin_env(void)
+{
+    char	**env;
+
+    env = environ;
+    while (*env)
+    {
+        if (strchr(*env, '='))
+        {
+            write(1, *env, strlen(*env));
+            write(1, "\n", 1);
+        }
+        env++;
+    }
+    return (0);
+}
 
 int	is_builtin(char *cmd)
 {
-	const char	*builtins[] = {"echo", "cd", "pwd", "export", "unset", "env", "exit", NULL};
-	int			i;
+    char	*builtins[10]={"echo", "cd", "pwd", "export", "unset", "env", "exit", NULL};
+    int			i;
 
-	i = 0;
-	while (builtins[i])
-	{
-		if (strcmp(cmd, builtins[i]) == 0)
-			return (1);
-		i++;
-	}
-	return (0);
+    i = 0;
+    while (builtins[i])
+    {
+        if (strcmp(cmd, builtins[i]) == 0)
+            return (1);
+        i++;
+    }
+    return (0);
 }
 
 int	builtin_echo(t_data *data)
 {
-	int	i;
-	int	n_flag;
+    int	i;
+    int	n_flag;
 
-	i = 1;
-	n_flag = 0;
-	if (data->cmd[1] && strcmp(data->cmd[1], "-n") == 0)
-	{
-		n_flag = 1;
-		i++;
-	}
-	while (data->cmd[i])
-	{
-		write(1, data->cmd[i], strlen(data->cmd[i]));
-		if (data->cmd[i + 1])
-			write(1, " ", 1);
-		i++;
-	}
-	if (!n_flag)
-		write(1, "\n", 1);
-	return (0);
-}
-
-int builtin_cd(t_data *data)
-{
-    char    *path;
-    char    cwd[MAX_PATH];
-
-    path = data->cmd[1];
-    if (!path)
+    i = 1;
+    n_flag = 0;
+    while (data->cmd[i] && strncmp(data->cmd[i], "-n", 2) == 0)
     {
-        path = getenv("HOME");
-        if (!path)
+        int j = 2;
+        while (data->cmd[i][j] == 'n')
+            j++;
+        if (data->cmd[i][j] == '\0')
         {
-            write(2, "cd: HOME not set\n", 17);
-            return (1);
-        }
-    }
-    if (chdir(path) != 0)
-    {
-        perror("cd");
-        return (1);
-    }
-    if (getcwd(cwd, sizeof(cwd)) != NULL)
-    {
-        char *new_pwd = malloc(strlen("PWD=") + strlen(cwd) + 1);
-        if (!new_pwd)
-        {
-            perror("malloc");
-            return 1;
-        }
-        strcpy(new_pwd, "PWD=");
-        strcat(new_pwd, cwd);
-        int i = 0;
-        while (environ[i])
-        {
-            if (strncmp(environ[i], "PWD=", 4) == 0)
-            {
-                environ[i] = new_pwd;
-                break;
-            }
+            n_flag = 1;
             i++;
         }
-        if (environ[i] == NULL)
-        {
-            environ[i] = new_pwd;
-            environ[i + 1] = NULL;
-        }
+        else
+            break;
     }
-    else
+    while (data->cmd[i])
     {
-        perror("getcwd");
-        return (1);
+        write(1, data->cmd[i], strlen(data->cmd[i]));
+        if (data->cmd[i + 1])
+            write(1, " ", 1);
+        i++;
     }
+    if (!n_flag)
+        write(1, "\n", 1);
     return (0);
+}
+
+int	builtin_cd(t_data *data)
+{
+	char	*path;
+	char	cwd[MAX_PATH];
+
+	path = data->cmd[1];
+	if (!path)
+	{
+		path = getenv("HOME");
+		if (!path)
+		{
+			write(2, "cd: HOME not set\n", 17);
+			return (1);
+		}
+	}
+	if (chdir(path) != 0)
+	{
+		perror("cd");
+		return (1);
+	}
+	if (getcwd(cwd, sizeof(cwd)) != NULL)
+		setenv("PWD", cwd, 1);
+	else
+	{
+		perror("getcwd");
+		return (1);
+	}
+	return (0);
 }
 
 int	builtin_pwd(void)
@@ -185,32 +302,7 @@ int	builtin_pwd(void)
 	}
 }
 
-int	builtin_export(t_data *data)
-{
-	char	**env;
-	int		i;
 
-	if (!data->cmd[1])
-	{
-		env = environ;
-		i =0;
-		while (env[i])
-		{
-			write(1, "declare -x ", 11);
-			write(1, *env, strlen(*env));
-			write(1, "\n", 1);
-			i++;
-		}
-		return (0);
-	}
-	i = 1;
-	while (data->cmd[i])
-	{
-		putenv(data->cmd[i]);
-		i++;
-	}
-	return (0);
-}
 
 int	builtin_unset(t_data *data)
 {
@@ -225,33 +317,20 @@ int	builtin_unset(t_data *data)
 	return (0);
 }
 
-int	builtin_env(void)
-{
-	char	**env;
 
-	env = environ;
-	while (*env)
+
+int	builtin_exit(t_data *data)
+{
+	int	exit_code;
+
+	exit_code = 0;
+	if (data->cmd[1])
 	{
-		write(1, *env, strlen(*env));
-		write(1, "\n", 1);
-		env++;
+		exit_code = atoi(data->cmd[1]);
 	}
-	return (0);
+	printf("exit\n");
+	return (-1);
 }
-
-
-int builtin_exit(t_data *data)
-{
-    int exit_code = 0;
-    if (data->cmd[1])
-    {
-        exit_code = atoi(data->cmd[1]);
-    }
-    printf("exit\n");
-    return -1;  
-}
-
-
 
 int	execute_builtin(t_data *data)
 {
@@ -291,7 +370,9 @@ void	handle_redirections(t_file *file)
 		}
 		if (file->outfile)
 		{
-			fd = open(file->file, O_WRONLY | O_CREAT | (file->apend ? O_APPEND : O_TRUNC), 0644);
+			fd = open(file->file,
+					O_WRONLY | O_CREAT | (file->apend ? O_APPEND : O_TRUNC),
+					0644);
 			if (fd == -1)
 			{
 				perror("open");
@@ -370,8 +451,8 @@ int	execute_command(t_data *data)
 	{
 		waitpid(pid, &status, 0);
 		return ((status & 0xff00) >> 8);
-}
 	}
+}
 
 int	execute_pipeline(t_data *data)
 {
@@ -379,6 +460,7 @@ int	execute_pipeline(t_data *data)
 	pid_t	pid;
 	int		status;
 	int		in_fd;
+				char *cmd_path;
 
 	in_fd = STDIN_FILENO;
 	while (data)
@@ -404,8 +486,6 @@ int	execute_pipeline(t_data *data)
 				exit(execute_builtin(data));
 			else
 			{
-				char	*cmd_path;
-
 				cmd_path = find_command(data->cmd[0]);
 				if (!cmd_path)
 				{
@@ -439,56 +519,61 @@ int	execute_pipeline(t_data *data)
 	return ((status & 0xff00) >> 8);
 }
 
-char *expand_variables(char *arg)
+char	*expand_variables(char *arg)
 {
-    char *result = malloc(strlen(arg) * 2 + 1); 
-    char *dst = result;
-    char *src = arg;
-    int in_quotes = 0;
+	char	*result;
+	char	*dst;
+	char	*src;
+	int		in_quotes;
+				char var_name[256];
+	int		i;
+	char	*value;
 
-while (*src)
-{
-    if (*src == '"')
-    {
-        in_quotes = !in_quotes;
-        src++;
-    }
-    else if (*src == '$' && (!in_quotes || isalnum(src[1]) || src[1] == '_' || src[1] == '?'))
-    {
-        src++;
-        if (*src == '?')
-        {
-            dst += sprintf(dst, "%d", exit_number);
-            src++;
-        }
-        else
-        {
-            char var_name[256];
-            int i = 0;
-            while (src[i] && (isalnum(src[i]) || src[i] == '_'))
-            {
-                var_name[i] = src[i];
-                i++;
-            }
-            var_name[i] = '\0';
-            char *value = getenv(var_name);
-            if (value)
-            {
-                dst += sprintf(dst, "%s", value);
-            }
-            src += i;
-        }
-    }
-    else
-    {
-        *dst++ = *src++;
-    }
+	result = malloc(strlen(arg) * 2 + 1);
+	dst = result;
+	src = arg;
+	in_quotes = 0;
+	while (*src)
+	{
+		if (*src == '"')
+		{
+			in_quotes = !in_quotes;
+			src++;
+		}
+		else if (*src == '$' && (!in_quotes || isalnum(src[1]) || src[1] == '_'
+				|| src[1] == '?'))
+		{
+			src++;
+			if (*src == '?')
+			{
+				dst += sprintf(dst, "%d", exit_number);
+				src++;
+			}
+			else
+			{
+				i = 0;
+				while (src[i] && (isalnum(src[i]) || src[i] == '_'))
+				{
+					var_name[i] = src[i];
+					i++;
+				}
+				var_name[i] = '\0';
+				value = getenv(var_name);
+				if (value)
+				{
+					dst += sprintf(dst, "%s", value);
+				}
+				src += i;
+			}
+		}
+		else
+		{
+			*dst++ = *src++;
+		}
+	}
+	*dst = '\0';
+	return (result);
 }
-*dst = '\0';
-return result;
-}
-
-
 
 t_data	*parse_input(char *input)
 {
@@ -499,17 +584,17 @@ t_data	*parse_input(char *input)
 	char	*cmd_token;
 	char	*cmd_saveptr;
 	int		i;
+	t_data	*new_data;
 
 	head = NULL;
 	current = NULL;
 	token = strtok_r(input, "|", &saveptr);
 	while (token)
 	{
-		t_data *new_data = malloc(sizeof(t_data));
+		new_data = malloc(sizeof(t_data));
 		new_data->cmd = malloc(sizeof(char *) * MAX_ARGS);
 		new_data->file = NULL;
 		new_data->next = NULL;
-
 		cmd_token = strtok_r(token, " \t\n", &cmd_saveptr);
 		i = 0;
 		while (cmd_token)
@@ -539,18 +624,15 @@ t_data	*parse_input(char *input)
 			cmd_token = strtok_r(NULL, " \t\n", &cmd_saveptr);
 		}
 		new_data->cmd[i] = NULL;
-
 		if (!head)
 			head = new_data;
 		else
 			current->next = new_data;
 		current = new_data;
-
 		token = strtok_r(NULL, "|", &saveptr);
 	}
 	return (head);
 }
-
 
 void	free_data(t_data *data)
 {
@@ -569,7 +651,6 @@ void	free_data(t_data *data)
 			i++;
 		}
 		free(data->cmd);
-		
 		file = data->file;
 		while (file)
 		{
@@ -578,59 +659,54 @@ void	free_data(t_data *data)
 			free(file);
 			file = next_file;
 		}
-		
 		free(data);
 		data = next;
 	}
 }
-int main()
+int	main(void)
 {
-    char *input;
-    t_data *data;
-    int should_exit = 0;
+	char	*input;
+	t_data	*data;
+	int		should_exit;
+	int		exit_status;
 
-    setup_signals();
-
-    while (!should_exit)
-    {
-        input = readline("\033[1;33mminishell> \033[0m");
-        if (!input)
-        {
-            printf("exit\n");
-            break;
-        }
-
-        if (*input)
-        {
-            add_history(input);
-            data = parse_input(input);
-            if (data)
-            {
-                if (data->next)
-                    exit_number = execute_pipeline(data);
-                else
-                {
-                    if (strcmp(data->cmd[0], "exit") == 0)
-                    {
-                        int exit_status = builtin_exit(data);
-                        if (exit_status == -1)
-                        {
-                            should_exit = 1;
-                            if (data->cmd[1])
-                                exit_number = atoi(data->cmd[1]);
-                        }
-                    }
-                    else
-                        exit_number = execute_command(data);
-                }
-                free_data(data);
-            }
-        }
-
-        free(input);
-    }
-
-    return exit_number;
+	should_exit = 0;
+	setup_signals();
+	while (!should_exit)
+	{
+		input = readline("\033[1;33mminishell> \033[0m");
+		if (!input)
+		{
+			printf("exit\n");
+			break ;
+		}
+		if (*input)
+		{
+			add_history(input);
+			data = parse_input(input);
+			if (data)
+			{
+				if (data->next)
+					exit_number = execute_pipeline(data);
+				else
+				{
+					if (strcmp(data->cmd[0], "exit") == 0)
+					{
+						exit_status = builtin_exit(data);
+						if (exit_status == -1)
+						{
+							should_exit = 1;
+							if (data->cmd[1])
+								exit_number = atoi(data->cmd[1]);
+						}
+					}
+					else
+						exit_number = execute_command(data);
+				}
+				free_data(data);
+			}
+		}
+		free(input);
+	}
+	return (exit_number);
 }
-
-
